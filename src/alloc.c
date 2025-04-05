@@ -202,11 +202,15 @@ void *tumalloc(size_t size) {
             }
         }
         
-        if (size + sizeof(header) > curr_node->size){// check with schrick if this is right, I forgot to add this line when I was doing valguard
-            // No suitable free block found, allocate from OS
-            void* ptr = do_alloc(size);
-            return ptr;
-        }
+        //Since nothing above worked than make a bigger segment, holden made me see the light with the lines below, for some reason I kept getting hung and it seems like it was the if statement
+        void* ptr = do_alloc(size); 
+        if (ptr == NULL) {
+            return NULL;
+        // if (size + sizeof(header) > curr_node->size){// check with schrick if this is right, I forgot to add this line when I was doing valguard
+        //     // No suitable free block found, allocate from OS
+        //     void* ptr = do_alloc(size);
+        //     return ptr;
+        // }
 
     }
 }
