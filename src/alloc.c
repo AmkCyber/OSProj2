@@ -150,11 +150,13 @@ void *do_alloc(size_t size) {
         adjustment = ALIGNMENT-align; //hexadecimal subtraction, finding how far needed to move to get to next page
     }
 
+
 //Processing
     void* mem_block = sbrk(size+sizeof(header)+adjustment);  //Creation of a block of memory considering the following: The sizeof(header) is kind of like padding for the OS to do stuff, so its size user requested+OS space+ whatever else space needed to reach the end/start of the next thing
     if (mem_block == (void *) -1) { //Error checking, Note: memory_block does not have the * because it's actual value has to be compared; the * is used to modify the values stored at that address. The general pointer having a value of -1 is what sbrk returns if it fails
         return NULL;
     }
+
 
 //Free list management for our block
     void* header_start = (void*)((intptr_t)mem_block+adjustment); //adjustment is an intptr and mem_block is a void, so convert it to intptr first to add them together however header_start was expecting to void so typecast the sum to void
@@ -165,6 +167,7 @@ void *do_alloc(size_t size) {
     
     return header_start+sizeof(header); // @return A pointer to the allocated memory/user data, so skip over the header
 }
+
 
 /**
  * Allocates memory for the end user
@@ -189,29 +192,28 @@ void *tumalloc(size_t size) {
         
         while (curr_node != NULL) {
             if (size + sizeof(header) <= curr_node->size) {// Is there enough space in this free block
-                curr_node = curr_node->next;
-                curr_node=split(curr_node, size + sizeof(header)); //is this right?
-                remove_free_block(curr_node);
+                void* new_ptr = split(curr_node, size + sizeof(header)); //is this right?
+                if (new_ptr == NULL){
+                    return NULL;
+                }
+                remove_free_block(new_ptr);
 
                 //Create a new header for this block of memory; line 196 not specified by pseudocode but I dont understand how it'd work without it
-                header* block_header = (header*)curr_node;
+                header* block_header = (header*)new_ptr;
                 block_header->size = size;
                 block_header->magic = 0x1602848;
 
-                return (void*)((char*)curr_node + sizeof(header));
+                return (void*)((char*)new_ptr + sizeof(header));
             }
+            curr_node = curr_node->next;
         }
         
-        //Since nothing above worked than make a bigger segment, holden made me see the light with the lines below, for some reason I kept getting hung and it seems like it was the if statement
+        //If nothing above worked than make a bigger segment, holden made me see the light with the lines below, for some reason the program kept getting hung and it seems like it was the if (block is bigger than current node) statement
         void* ptr = do_alloc(size); 
         if (ptr == NULL) {
             return NULL;
-        // if (size + sizeof(header) > curr_node->size){// check with schrick if this is right, I forgot to add this line when I was doing valguard
-        //     // No suitable free block found, allocate from OS
-        //     void* ptr = do_alloc(size);
-        //     return ptr;
-        // }
-
+        }
+        return ptr; //malloc expects a return
     }
 }
 
@@ -242,21 +244,28 @@ void *tucalloc(size_t num, size_t size) {
 void *turealloc(void *ptr, size_t new_size) {
 //create new block with desired size, transfer data, free memory from old block, return new block pointer
     
-    if (ptr == NULL) { //Error catching incase ptr isnt given, basically turns into malloc
-        return tumalloc(new_size);
-    }
-
-    if (new_size == 0) { //Another error catch, frees data if size is null
+    if (new_size == 0) { //Error catch, frees data if size is null
         tufree(ptr);
         return NULL;
     }
 
+    void* new_ptr = tumalloc(new_size);  // Call malloc
+    if (new_ptr == NULL){
+        return NULL;
+    }
+
     //Get old header to get old data and check magic number
+    header* old_header = (header*)((char*)ptr-sizeof(header)); //old data first check magic number
+    if (old_header -> magic != 0x1602848) {
+        fprintf(stderr, "MEMORY CORRUPTION DETECTED\n");//had chat give me the proper syntax for writing this error message
+        abort();
+    }
 
-    //void* new_ptr = tumalloc(new_size);  // Call malloc
+    memcpy(new_ptr, ptr, old_header->size);
+    
+    tufree(ptr);
 
-
-    return NULL;
+    return new_ptr;
 }
 
 /**
@@ -276,7 +285,7 @@ void tufree(void *ptr) {
         free_block* free_blk = (free_block*)free_header;
         free_blk->size = free_header->size;
         free_blk->next = HEAD;
-        HEAD = free_blk;
+        HEAD = free_blk; // code was getting hung here ask schrick why
         coalesce(free_blk);
     
     } else {
